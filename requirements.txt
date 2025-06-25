@@ -1,0 +1,7 @@
+aiogram
+python-dotenv
+pip-audit
+aiosqlite
+
+pydantic
+pydantic-settings
