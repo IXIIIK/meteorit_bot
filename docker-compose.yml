@@ -1,0 +1,17 @@
+version: '3.9'
+
+services:
+  meteorit_bot:
+    build: .
+    container_name: meteorit_bot
+    restart: always
+    volumes:
+      - ./bot:/app/bot
+    environment:
+      - .env
+    networks:
+      - tg-bots
+
+networks:
+  tg-bots:
+    external: true
