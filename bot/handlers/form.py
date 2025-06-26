@@ -32,7 +32,8 @@ async def send_welcome(msg: Message):
         resize_keyboard=True,
         one_time_keyboard=False
     )
-    await msg.answer("Привет! Что хочешь сделать?", reply_markup=keyboard)
+    await msg.answer("Добрый день! На связи метеорит, в этом боте можно забронировать стол или посмотреть действующее бронирование?",\
+                    reply_markup=keyboard)
 
 
 @router.message(F.text == "Мои брони")
@@ -121,7 +122,14 @@ async def choose_time(callback: CallbackQuery, state: FSMContext):
         if booking_at.date() == current_datetime.date() and delta < 7200:
             unavailable.append(table)
 
-    all_tables = ["13", "16", "23", "17", "18", "19", "20", "22"]
+    all_tables = ["13 от 6 человек",
+                "16 до 5 человек",
+                "23 до 2 людейв",
+                "17 до 3 людей",        
+                "18 до 3 людей",
+                "19 до 3 людей",
+                "20 до 3 людей",
+                "22 до 3 людей"]
     available = [t for t in all_tables if t not in unavailable]
 
     if not available:
@@ -129,14 +137,10 @@ async def choose_time(callback: CallbackQuery, state: FSMContext):
         await state.set_state(Booking.time)
         return
 
-    # 🖼 Отправка схемы зала
-    photo = FSInputFile(IMG_PATH)
-    await callback.message.answer_photo(photo, caption="Вот схема зала для выбора столика:")
-
     # Клавиатура
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text=f"Стол {t}", callback_data=f"table_{t}")] for t in available
+            [InlineKeyboardButton(text=f"Стол {t}", callback_data=f"table_{t[:2]}")] for t in available
         ]
     )
     await callback.message.answer(f"Выбери стол на {hour}:00, {user_data['date']}:", reply_markup=keyboard)
@@ -148,7 +152,7 @@ async def choose_table(callback: CallbackQuery, state: FSMContext):
     table_number = callback.data.split("_")[1]
     await state.update_data(table_number=table_number)
     await state.set_state(Booking.name)
-    await callback.message.answer("Как вас зовут?")
+    await callback.message.answer("Как к вам можно обратиться?")
 
 
 @router.message(Booking.name)

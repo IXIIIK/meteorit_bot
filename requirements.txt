@@ -2,6 +2,7 @@ aiogram
 python-dotenv
 pip-audit
 aiosqlite
+apscheduler
 
 pydantic
 pydantic-settings

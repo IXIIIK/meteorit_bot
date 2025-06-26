@@ -1,11 +1,10 @@
 import aiosqlite
 from datetime import datetime, timedelta
-from pathlib import Path
 from aiogram import Bot
 import asyncio
 
 
-DB_PATH = Path(__file__).parent / "bookings.db"
+DB_PATH = "bot/bookings.db"
 
 
 async def init_db():
@@ -26,9 +25,10 @@ async def init_db():
 
 async def get_all_bookings():
     async with aiosqlite.connect(DB_PATH) as db:
-        cursor = await db.execute("SELECT table_number, time, name, booking_at FROM bookings")
-        rows = await cursor.fetchall()
-        return rows
+        cursor = await db.execute(
+            "SELECT user_id, table_number, time, name, booking_at FROM bookings"
+        )
+        return await cursor.fetchall()
 
 async def save_booking(user_id: int, table_number: str, time: str, name: str, date: str):
     # date = "24.06.2025", time = "14:00"
@@ -45,7 +45,7 @@ async def save_booking(user_id: int, table_number: str, time: str, name: str, da
 
 
 async def get_booking(user_id):
-    async with aiosqlite.connect("bookings.db") as db:
+    async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
             """
             SELECT id, table_number, time, name, created_at, booking_at
@@ -83,4 +83,13 @@ async def reminder_loop(bot: Bot):
                                 f"Для отмены введите /start и перейдите в 'мои брони'"
                             )
         await asyncio.sleep(60)
+
+
+async def delete_booking_by_user_and_time(user_id: int, booking_at: str):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "DELETE FROM bookings WHERE user_id = ? AND booking_at = ?",
+            (user_id, booking_at)
+        )
+        await db.commit()
 
