@@ -6,8 +6,8 @@ services:
     container_name: meteorit_bot
     restart: always
     volumes:
-      - ./bot:/app/bot
-    environment:
+      - ./bookings.db:/app/bot/bookings.db
+    env_file:
       - .env
     networks:
       - tg-bots

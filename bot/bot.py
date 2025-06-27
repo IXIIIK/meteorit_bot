@@ -29,6 +29,7 @@ async def main():
     dp.include_router(router)
 
     asyncio.create_task(reminder_loop(bot))
+    await init_db()
     await dp.start_polling(bot)
 
 

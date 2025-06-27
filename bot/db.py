@@ -45,7 +45,7 @@ async def save_booking(user_id: int, table_number: str, time: str, name: str, da
 
 
 async def get_booking(user_id):
-    async with aiosqlite.connect("bookings.db") as db:
+    async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
             """
             SELECT id, table_number, time, name, created_at, booking_at
