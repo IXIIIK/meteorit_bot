@@ -1,8 +1,6 @@
-# bot/sheduler_time.py
-
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from datetime import datetime, timedelta
-from bot.db import get_all_bookings, delete_booking_by_user_and_time
+from db import get_all_bookings, delete_booking_by_user_and_time
 from aiogram import Bot
 
 def setup_scheduler(bot: Bot):

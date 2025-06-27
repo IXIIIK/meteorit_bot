@@ -29,12 +29,27 @@ async def get_all_bookings():
             "SELECT user_id, table_number, time, name, booking_at FROM bookings"
         )
         return await cursor.fetchall()
+    
+
+async def booking_exists(table_number: str, booking_at: datetime) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            """
+            SELECT 1 FROM bookings
+            WHERE table_number = ? AND ABS(strftime('%s', booking_at) - strftime('%s', ?)) < 7200
+            """,
+            (table_number, booking_at.isoformat())
+        )
+        return await cursor.fetchone() is not None
+
 
 async def save_booking(user_id: int, table_number: str, time: str, name: str, date: str):
-    # date = "24.06.2025", time = "14:00"
     day = datetime.strptime(date, "%d.%m.%Y")
-    hour = int(time.split(":")[0])
-    booking_at = day.replace(hour=hour, minute=0)
+    hour, minute = map(int, time.split(":"))
+    booking_at = day.replace(hour=hour, minute=minute)
+
+    if await booking_exists(table_number, booking_at):
+        raise ValueError("Бронь на это время уже существует")
 
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
@@ -42,6 +57,8 @@ async def save_booking(user_id: int, table_number: str, time: str, name: str, da
             (user_id, table_number, time, name, booking_at.isoformat())
         )
         await db.commit()
+
+
 
 
 async def get_booking(user_id):

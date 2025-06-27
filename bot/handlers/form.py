@@ -1,14 +1,14 @@
 from aiogram import Router, F
-from aiogram import Bot
-import asyncio
-from pathlib import Path
 from aiogram.types import Message, CallbackQuery, FSInputFile
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+
 from datetime import datetime, timedelta
+from pathlib import Path
+import re
 from db import save_booking, get_booking, delete_booking, get_all_bookings
 
 IMG_PATH = Path(__file__).parent / "img" / "booking_img.png"
@@ -20,6 +20,7 @@ class Booking(StatesGroup):
     time = State()
     table = State()
     name = State()
+    phone = State()
 
 
 @router.message(F.text == "/start")
@@ -49,19 +50,16 @@ async def my_bookings(msg: Message):
         # если get_booking возвращает: (id, table, time, name, created_at, booking_at)
         booking_id, table, time, name, created_at, booking_at = booking
         booking_fmt = datetime.fromisoformat(booking_at).strftime("%d.%m.%Y")
-
         text = (
             f"📅 Дата: {booking_fmt}\n"
             f"🪑 Стол {table} на {time}\n"
             f"👤 Имя: {name}"
         )
-
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text="❌ Отменить", callback_data=f"cancel_{booking_id}")]
             ]
         )
-
         await msg.answer(text, reply_markup=keyboard)
 
 
@@ -95,41 +93,40 @@ async def choose_date(callback: CallbackQuery, state: FSMContext):
     await state.update_data(date=date_str)
     await state.set_state(Booking.time)
 
-    keyboard = InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text=f"{h}:00", callback_data=f"time_{h}")] for h in range(9, 24)
-        ]
-    )
-    await callback.message.answer("Выбери время брони:", reply_markup=keyboard)
+    builder = InlineKeyboardBuilder()
+    for hour in range(9, 24):
+        for minute in [0, 30]:
+            time_str = f"{hour:02d}:{minute:02d}"
+            builder.button(text=time_str, callback_data=f"time_{time_str}")
+    builder.adjust(3)
+
+    await callback.message.answer("Выбери время брони:", reply_markup=builder.as_markup())
+
 
 
 @router.callback_query(F.data.startswith("time_"))
 async def choose_time(callback: CallbackQuery, state: FSMContext):
-    hour = int(callback.data.split("_")[1])
-    await state.update_data(hour=hour)
+    time_str = callback.data.split("_")[1]  # формат "HH:MM"
+    hour, minute = map(int, time_str.split(":"))
+    await state.update_data(hour=hour, minute=minute)
     await state.set_state(Booking.table)
 
     user_data = await state.get_data()
     selected_date = datetime.strptime(user_data['date'], "%d.%m.%Y")
-    current_datetime = selected_date.replace(hour=hour, minute=0)
+    current_datetime = selected_date.replace(hour=hour, minute=minute)
 
     existing = await get_all_bookings()
     unavailable = []
     for record in existing:
         table, _, _, booking_at_str = record
         booking_at = datetime.fromisoformat(booking_at_str)
+        # если бронирование пересекается по времени (±1 час)
         delta = abs((booking_at - current_datetime).total_seconds())
-        if booking_at.date() == current_datetime.date() and delta < 7200:
+        if booking_at.date() == current_datetime.date() and delta < 7200:  # теперь — 1 час
             unavailable.append(table)
 
-    all_tables = ["13 от 6 человек",
-                "16 до 5 человек",
-                "23 до 2 людейв",
-                "17 до 3 людей",        
-                "18 до 3 людей",
-                "19 до 3 людей",
-                "20 до 3 людей",
-                "22 до 3 людей"]
+    all_tables = ["13 от 6 человек", "16 до 5 человек", "23 до 2 людей",
+                  "17 до 3 людей", "18 до 3 людей", "19 до 3 людей", "20 до 3 людей", "22 до 3 людей"]
     available = [t for t in all_tables if t not in unavailable]
 
     if not available:
@@ -137,13 +134,13 @@ async def choose_time(callback: CallbackQuery, state: FSMContext):
         await state.set_state(Booking.time)
         return
 
-    # Клавиатура
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text=f"Стол {t}", callback_data=f"table_{t[:2]}")] for t in available
         ]
     )
-    await callback.message.answer(f"Выбери стол на {hour}:00, {user_data['date']}:", reply_markup=keyboard)
+    await callback.message.answer(f"Выбери стол на {time_str}, {user_data['date']}:", reply_markup=keyboard)
+
 
 
 
@@ -157,34 +154,45 @@ async def choose_table(callback: CallbackQuery, state: FSMContext):
 
 @router.message(Booking.name)
 async def get_name(msg: Message, state: FSMContext):
-    name = msg.text
+    await state.update_data(name=msg.text)
+    await state.set_state(Booking.phone)
+    await msg.answer("Оставьте, пожалуйста, номер телефона для связи.")
+
+
+@router.message(Booking.phone)
+async def get_phone(msg: Message, state: FSMContext):
+    phone = msg.text
+    await state.update_data(phone=phone)
+
     data = await state.get_data()
+    time_str = f"{data['hour']:02d}:{data['minute']:02d}"
 
-    await save_booking(
-        user_id=msg.from_user.id,
-        table_number=data["table_number"],
-        time=f"{data['hour']}:00",
-        name=name,
-        date=data["date"]
-    )
+    try:
+        await save_booking(
+            user_id=msg.from_user.id,
+            table_number=data["table_number"],
+            time=time_str,
+            name=data["name"],
+            date=data["date"]
+        )
+    except ValueError:
+        await msg.answer("⚠️ Кто-то только что забронировал этот стол на это время. Попробуй выбрать другой.")
+        await state.clear()
+        return
 
-    # 👇 сообщение пользователю
-    await msg.answer(f"Готово! Стол {data['table_number']} забронирован на {data['hour']}:00. До встречи, {name}!")
+    await msg.answer(f"Готово! Стол {data['table_number']} забронирован на {time_str}. До встречи, {data['name']}!\n"
+                     f"Бронь на столик длиться 2 часа!")
     await state.clear()
 
-    # 📩 сообщение менеджеру
-    manager_chat_id = -4980377325  # ← сюда вставь настоящий chat_id
-    booking_date = data['date']
-    booking_time = f"{data['hour']}:00"
-    table = data['table_number']
+    manager_chat_id = -4980377325  # основной
 
     text = (
         f"📢 Новая бронь!\n"
-        f"📅 Дата: {booking_date}\n"
-        f"⏰ Время: {booking_time}\n"
-        f"🪑 Стол: {table}\n"
-        f"👤 Имя: {name}"
+        f"📅 Дата: {data['date']}\n"
+        f"⏰ Время: {time_str}\n"
+        f"🪑 Стол: {data['table_number']}\n"
+        f"👤 Имя: {data['name']}\n"
+        f"📞 Телефон: {phone}"
     )
+
     await msg.bot.send_message(chat_id=manager_chat_id, text=text)
-
-

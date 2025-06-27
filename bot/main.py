@@ -1,20 +1,33 @@
 import asyncio
 from aiogram import Bot, Dispatcher
-from bot import router
-from bot.config import TOKEN
-from bot.db import init_db, reminder_loop
-from bot.scheduler_time import setup_scheduler
+from bot_core import router
+from db import init_db, reminder_loop
+from sheduler_time import setup_scheduler
+
+import os
+import logging
+from dotenv import load_dotenv
+
+load_dotenv()
+
+TOKEN = os.getenv("BOT_TOKEN")
 
 async def main():
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+    )
+
+
     await init_db()
-    bot = Bot(token=TOKEN)
+    bot = Bot(TOKEN)
     dp = Dispatcher()
     dp.include_router(router)
 
     setup_scheduler(bot)
     asyncio.create_task(reminder_loop(bot))
 
-    print("🚀 Запуск бота...")
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
