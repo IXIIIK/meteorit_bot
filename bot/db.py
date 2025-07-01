@@ -25,9 +25,16 @@ async def init_db():
 
 async def migrate_add_notification_flags():
     async with aiosqlite.connect(DB_PATH) as db:
-        # Добавляем флаги, если их нет
-        await db.execute("ALTER TABLE bookings ADD COLUMN notify_24_sent BOOLEAN DEFAULT 0")
-        await db.execute("ALTER TABLE bookings ADD COLUMN notify_12_sent BOOLEAN DEFAULT 0")
+        try:
+            await db.execute("ALTER TABLE bookings ADD COLUMN notify_24_sent BOOLEAN DEFAULT 0")
+        except aiosqlite.OperationalError:
+            pass  # колонка уже есть
+
+        try:
+            await db.execute("ALTER TABLE bookings ADD COLUMN notify_12_sent BOOLEAN DEFAULT 0")
+        except aiosqlite.OperationalError:
+            pass  # колонка уже есть
+
         await db.commit()
 
 
