@@ -17,7 +17,7 @@ async def init_db():
                 time TEXT NOT NULL,
                 name TEXT NOT NULL,
                 booking_at TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
             """)
         await db.commit()
