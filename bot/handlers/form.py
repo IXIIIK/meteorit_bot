@@ -113,16 +113,18 @@ async def choose_time(callback: CallbackQuery, state: FSMContext):
     user_data = await state.get_data()
     selected_date = datetime.strptime(user_data['date'], "%d.%m.%Y")
     current_datetime = selected_date.replace(hour=hour, minute=minute)
+    current_datetime = current_datetime.replace(tzinfo=timezone.utc)  # 👈 добавили
 
     existing = await get_all_bookings()
     unavailable = []
     for record in existing:
         user_id, table, time, name, booking_at_str = record
         booking_at = datetime.fromisoformat(booking_at_str)
-        # если бронирование пересекается по времени (1 час)
-        selected_date = datetime.strptime(user_data['date'], "%d.%m.%Y")
-        current_datetime = selected_date.replace(hour=hour, minute=minute)
-        current_datetime = current_datetime.replace(tzinfo=timezone.utc)
+
+        # 👇 Приведение к tz-aware, если вдруг строка сохранилась без tzinfo
+        if booking_at.tzinfo is None:
+            booking_at = booking_at.replace(tzinfo=timezone.utc)
+
         booking_start = booking_at
         booking_end = booking_at + timedelta(hours=2)
 
@@ -131,6 +133,7 @@ async def choose_time(callback: CallbackQuery, state: FSMContext):
 
         if booking_start.date() == new_start.date() and (new_start < booking_end and booking_start < new_end):
             unavailable.append(table)
+
 
     all_tables = ["13 от 6 человек", "16 до 5 человек", "23 до 2 людей",
                   "17 до 3 людей", "18 до 3 людей", "19 до 3 людей", "20 до 3 людей", "22 до 3 людей"]
