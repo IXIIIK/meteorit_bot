@@ -1,5 +1,5 @@
 import aiosqlite
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from aiogram import Bot
 import asyncio
 
@@ -82,9 +82,11 @@ async def delete_booking(booking_id: int):
 
 async def reminder_loop(bot: Bot):
     while True:
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         for delta in [24, 12]:
             target_time = now + timedelta(hours=delta)
+            window_start = target_time
+            window_end = target_time + timedelta(minutes=1)
             async with aiosqlite.connect(DB_PATH) as db:
                 async with db.execute("""
                     SELECT user_id, table_number, booking_at FROM bookings
@@ -92,8 +94,9 @@ async def reminder_loop(bot: Bot):
                     bookings = await cursor.fetchall()
                     for user_id, table, booking_at_str in bookings:
                         booking_at = datetime.fromisoformat(booking_at_str)
-                        # разница до цели - в пределах 1 минуты (чтобы не упустить момент)
-                        if abs((booking_at - target_time).total_seconds()) < 60:
+                        if booking_at.tzinfo is None:
+                            booking_at = booking_at.replace(tzinfo=timezone.utc)
+                        if window_start <= booking_at < window_end:
                             await bot.send_message(
                                 user_id,
                                 f"⏰ Напоминание: у вас бронь стола через {delta} часов — в {booking_at.strftime('%H:%M')}!\n"

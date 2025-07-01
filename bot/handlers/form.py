@@ -8,7 +8,6 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 from datetime import datetime, timedelta
 from pathlib import Path
-import re
 from db import save_booking, get_booking, delete_booking, get_all_bookings
 
 IMG_PATH = Path(__file__).parent / "img" / "booking_img.png"
@@ -118,9 +117,9 @@ async def choose_time(callback: CallbackQuery, state: FSMContext):
     existing = await get_all_bookings()
     unavailable = []
     for record in existing:
-        table, _, _, booking_at_str = record
+        user_id, table, time, name, booking_at_str = record
         booking_at = datetime.fromisoformat(booking_at_str)
-        # если бронирование пересекается по времени (±1 час)
+        # если бронирование пересекается по времени (1 час)
         delta = abs((booking_at - current_datetime).total_seconds())
         if booking_at.date() == current_datetime.date() and delta < 7200:  # теперь — 1 час
             unavailable.append(table)
@@ -184,7 +183,7 @@ async def get_phone(msg: Message, state: FSMContext):
                      f"Бронь на столик длиться 2 часа!")
     await state.clear()
 
-    manager_chat_id = -4980377325  # основной
+    manager_chat_id = -4980377325
 
     text = (
         f"📢 Новая бронь!\n"
