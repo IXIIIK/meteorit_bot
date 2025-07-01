@@ -1,7 +1,7 @@
 import asyncio
 from aiogram import Bot, Dispatcher
 from bot_core import router
-from db import init_db, reminder_loop
+from db import init_db, reminder_loop, migrate_add_notification_flags
 from sheduler_time import setup_scheduler
 
 import os
@@ -21,6 +21,7 @@ async def main():
 
 
     await init_db()
+    await migrate_add_notification_flags()
     bot = Bot(TOKEN)
     dp = Dispatcher()
     dp.include_router(router)
