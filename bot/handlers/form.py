@@ -6,7 +6,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from db import save_booking, get_booking, delete_booking, get_all_bookings
 
@@ -120,8 +120,16 @@ async def choose_time(callback: CallbackQuery, state: FSMContext):
         user_id, table, time, name, booking_at_str = record
         booking_at = datetime.fromisoformat(booking_at_str)
         # если бронирование пересекается по времени (1 час)
-        delta = abs((booking_at - current_datetime).total_seconds())
-        if booking_at.date() == current_datetime.date() and delta < 7200:  # теперь — 1 час
+        selected_date = datetime.strptime(user_data['date'], "%d.%m.%Y")
+        current_datetime = selected_date.replace(hour=hour, minute=minute)
+        current_datetime = current_datetime.replace(tzinfo=timezone.utc)
+        booking_start = booking_at
+        booking_end = booking_at + timedelta(hours=2)
+
+        new_start = current_datetime
+        new_end = current_datetime + timedelta(hours=2)
+
+        if booking_start.date() == new_start.date() and (new_start < booking_end and booking_start < new_end):
             unavailable.append(table)
 
     all_tables = ["13 от 6 человек", "16 до 5 человек", "23 до 2 людей",
