@@ -12,8 +12,11 @@ def setup_scheduler(bot: Bot):
         bookings = await get_all_bookings()
         for user_id, table, time, name, booking_at_str in bookings:
             booking_at = datetime.fromisoformat(booking_at_str)
+            booking_at = datetime.fromisoformat(booking_at_str)
             if booking_at.tzinfo is None:
                 booking_at = booking_at.replace(tzinfo=timezone.utc)
+            else:
+                booking_at = booking_at.astimezone(timezone.utc)
 
             if now > booking_at + timedelta(hours=2):
                 await delete_booking_by_user_and_time(user_id, booking_at_str)

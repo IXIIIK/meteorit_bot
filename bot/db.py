@@ -5,7 +5,7 @@ import asyncio
 
 
 DB_PATH = "bot/bookings.db"
-
+MSK = timezone(timedelta(hours=3))
 
 async def init_db():
     async with aiosqlite.connect(DB_PATH) as db:
@@ -61,9 +61,8 @@ async def booking_exists(table_number: str, booking_at: datetime) -> bool:
 async def save_booking(user_id: int, table_number: str, time: str, name: str, date: str):
     day = datetime.strptime(date, "%d.%m.%Y")
     hour, minute = map(int, time.split(":"))
-    booking_at = day.replace(hour=hour, minute=minute)
-    booking_at = booking_at.replace(tzinfo=timezone.utc)
-
+    booking_at = day.replace(hour=hour, minute=minute, tzinfo=MSK)
+    booking_at = booking_at.astimezone(timezone.utc)
     if await booking_exists(table_number, booking_at):
         raise ValueError("Бронь на это время уже существует")
 
@@ -118,6 +117,8 @@ async def reminder_loop(bot: Bot):
                         booking_at = datetime.fromisoformat(booking_at_str)
                         if booking_at.tzinfo is None:
                             booking_at = booking_at.replace(tzinfo=timezone.utc)
+                        else:
+                            booking_at = booking_at.astimezone(timezone.utc)
 
                         if window_start <= booking_at < window_end:
                             if delta == 24 and not notify_24:
