@@ -123,7 +123,7 @@ async def reminder_loop(bot: Bot):
                             if delta == 24 and not notify_24:
                                 await bot.send_message(
                                     user_id,
-                                    f"⏰ Напоминание: у вас бронь стола через 24 часа — в {booking_at.strftime('%H:%M')}!\n"
+                                    f"⏰ Напоминание: у вас бронь стола — в {booking_at.strftime('%H:%M')}!\n"
                                     f"Для отмены введите /start и перейдите в 'мои брони'"
                                 )
                                 await db.execute(
@@ -134,7 +134,7 @@ async def reminder_loop(bot: Bot):
                             elif delta == 12 and not notify_12:
                                 await bot.send_message(
                                     user_id,
-                                    f"⏰ Напоминание: у вас бронь стола через 12 часов — в {booking_at.strftime('%H:%M')}!\n"
+                                    f"⏰ Напоминание: у вас бронь стола через — в {booking_at.strftime('%H:%M')}!\n"
                                     f"Для отмены введите /start и перейдите в 'мои брони'"
                                 )
                                 await db.execute(
