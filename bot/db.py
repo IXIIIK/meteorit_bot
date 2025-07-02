@@ -62,8 +62,8 @@ async def booking_exists(table_number: str, booking_at: datetime) -> bool:
 async def save_booking(user_id: int, table_number: str, time: str, name: str, date: str):
     day = datetime.strptime(date, "%d.%m.%Y")
     hour, minute = map(int, time.split(":"))
-    booking_at = day.replace(hour=hour, minute=minute, tzinfo=MSK)
-    booking_at = booking_at.astimezone(timezone.utc)
+    naive_dt = datetime.strptime(date + f" {time}", "%d.%m.%Y %H:%M")
+    booking_at = naive_dt.replace(tzinfo=MSK).astimezone(timezone.utc)
     if await booking_exists(table_number, booking_at):
         raise ValueError("Бронь на это время уже существует")
 
@@ -101,7 +101,6 @@ async def reminder_loop(bot: Bot):
     while True:
         try:
             now_utc = datetime.now(timezone.utc)
-
             now_msk = now_utc.astimezone(MSK)
 
             for delta in [24, 12]:
