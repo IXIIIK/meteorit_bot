@@ -1,4 +1,5 @@
 import aiosqlite
+import logging
 from datetime import datetime, timedelta, timezone
 from aiogram import Bot
 import asyncio
@@ -95,16 +96,19 @@ async def delete_booking(booking_id: int):
         await db.commit()
 
 
-import logging
 
 async def reminder_loop(bot: Bot):
     while True:
         try:
-            now = datetime.now(timezone.utc)
+            now_utc = datetime.now(timezone.utc)
+
+            now_msk = now_utc.astimezone(MSK)
+
             for delta in [24, 12]:
-                target_time = now + timedelta(hours=delta)
-                window_start = target_time - timedelta(minutes=2)
-                window_end = target_time + timedelta(minutes=3)
+                target_msk = now_msk + timedelta(hours=delta)
+
+                window_start = target_msk - timedelta(minutes=2)
+                window_end = target_msk + timedelta(minutes=3)
 
                 async with aiosqlite.connect(DB_PATH) as db:
                     async with db.execute("""
@@ -115,16 +119,14 @@ async def reminder_loop(bot: Bot):
 
                     for user_id, table, booking_at_str, notify_24, notify_12 in bookings:
                         booking_at = datetime.fromisoformat(booking_at_str)
-                        if booking_at.tzinfo is None:
-                            booking_at = booking_at.replace(tzinfo=timezone.utc)
-                        else:
-                            booking_at = booking_at.astimezone(timezone.utc)
 
-                        if window_start <= booking_at < window_end:
+                        booking_at_msk = booking_at.astimezone(MSK)
+
+                        if window_start <= booking_at_msk < window_end:
                             if delta == 24 and not notify_24:
                                 await bot.send_message(
                                     user_id,
-                                    f"⏰ Напоминание: у вас бронь стола — в {booking_at.strftime('%H:%M')}!\n"
+                                    f"⏰ Напоминание: у вас бронь стола — в {booking_at_msk.strftime('%H:%M')}!\n"
                                     f"Для отмены введите /start и перейдите в 'мои брони'"
                                 )
                                 await db.execute(
@@ -135,7 +137,7 @@ async def reminder_loop(bot: Bot):
                             elif delta == 12 and not notify_12:
                                 await bot.send_message(
                                     user_id,
-                                    f"⏰ Напоминание: у вас бронь стола через — в {booking_at.strftime('%H:%M')}!\n"
+                                    f"⏰ Напоминание: у вас бронь стола через — в {booking_at_msk.strftime('%H:%M')}!\n"
                                     f"Для отмены введите /start и перейдите в 'мои брони'"
                                 )
                                 await db.execute(
@@ -149,7 +151,6 @@ async def reminder_loop(bot: Bot):
             logging.exception("Ошибка в reminder_loop")
 
         await asyncio.sleep(60)
-
 
 
 async def delete_booking_by_user_and_time(user_id: int, booking_at: str):
