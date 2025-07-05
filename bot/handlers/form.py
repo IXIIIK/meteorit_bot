@@ -64,10 +64,32 @@ async def my_bookings(msg: Message):
 
 
 @router.callback_query(F.data.startswith("cancel_"))
-async def cancel_booking(callback: CallbackQuery):
+async def cancel_booking(callback: CallbackQuery, bot):
     booking_id = int(callback.data.split("_")[1])
+
+    # Получаем все брони пользователя
+    bookings = await get_booking(callback.from_user.id)
+    cancelled = None
+
+    for b in bookings:
+        b_id, table, time, name, created_at, booking_at = b
+        if b_id == booking_id:
+            cancelled = b
+            break
+
     await delete_booking(booking_id)
     await callback.message.answer("Бронь успешно отменена ✅")
+
+    if cancelled:
+        manager_chat_id = -4980377325
+        booking_fmt = datetime.fromisoformat(cancelled[5]).astimezone(timezone(timedelta(hours=3))).strftime("%d.%m.%Y %H:%M")
+        await bot.send_message(
+            manager_chat_id,
+            f"❌ Отмена брони:\n"
+            f"📅 {booking_fmt}\n"
+            f"👥 Гостей: {cancelled[1]}\n"
+            f"👤 Имя: {cancelled[3]}"
+        )
 
 
 # Создаём кнопки времени с шагом в 1 час
@@ -91,7 +113,7 @@ async def choose_date(callback: CallbackQuery, state: FSMContext):
     date_str = callback.data.replace("date_", "")
     await state.update_data(date=date_str)
     await state.set_state(Booking.guests)
-    await callback.message.answer("Введите количество гостей (максимум 6):")
+    await callback.message.answer("Введите количество гостей (максимум 8):")
 
 
 @router.callback_query(F.data.startswith("time_"))
@@ -158,12 +180,22 @@ async def get_guests(msg: Message, state: FSMContext):
     await state.set_state(Booking.time)
 
     builder = InlineKeyboardBuilder()
+    now = datetime.now(timezone(timedelta(hours=3)))  # Текущее время в МСК
+
+    user_data = await state.get_data()
+    selected_date = datetime.strptime(user_data["date"], "%d.%m.%Y")
+    is_today = selected_date.date() == now.date()
+
     for hour in range(9, 24):
         for minute in [0, 30]:
+            slot = selected_date.replace(hour=hour, minute=minute, tzinfo=timezone(timedelta(hours=3)))
+            if is_today and slot <= now:
+                continue  # ⛔ Пропускаем прошедшее время для сегодняшнего дня
+
             time_str = f"{hour:02d}:{minute:02d}"
             builder.button(text=time_str, callback_data=f"time_{time_str}")
-    builder.adjust(3)
 
+    builder.adjust(3)
     await msg.answer("Выбери время брони:", reply_markup=builder.as_markup())
 
 
