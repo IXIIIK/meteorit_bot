@@ -18,8 +18,6 @@ async def main():
         level=logging.INFO,
         format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
     )
-
-
     await init_db()
     await migrate_add_notification_flags()
     bot = Bot(TOKEN)
