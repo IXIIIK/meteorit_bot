@@ -5,14 +5,22 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
+from collections import defaultdict
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone, time
 from pathlib import Path
 from db import save_booking, get_booking, delete_booking, get_all_bookings
 
 
 IMG_PATH = Path(__file__).parent / "img" / "booking_img.png"
 router = Router()
+
+TABLES = {
+    8: ["T8_1"],
+    6: ["T6_1"],
+    3: [f"T3_{i}" for i in range(1, 7)]
+}
+
 
 
 class Booking(StatesGroup):
@@ -21,6 +29,50 @@ class Booking(StatesGroup):
     time = State()
     name = State()
     phone = State()
+
+
+async def find_next_available_slot(guests: int, selected_dt: datetime, all_bookings):
+    tables = TABLES.get(guests)
+    if not tables:
+        return None, None
+
+    bookings_by_table = defaultdict(list)
+    selected_date = selected_dt.date()
+
+    # Группируем брони по столам
+    for _, table, _, _, booking_at_str in all_bookings:
+        booking_at = datetime.fromisoformat(booking_at_str).replace(tzinfo=timezone.utc)
+        if booking_at.date() == selected_date:
+            bookings_by_table[table].append(booking_at)
+
+    for table_id in tables:
+        occupied = bookings_by_table.get(table_id, [])
+        occupied.sort()
+
+        # Проверка текущего слота
+        slot_start = selected_dt
+        slot_end = slot_start + timedelta(hours=2)
+
+        conflict = any(
+            not (b + timedelta(hours=2) <= slot_start or b >= slot_end)
+            for b in occupied
+        )
+        if not conflict:
+            return table_id, selected_dt
+
+        # Поиск ближайшего свободного слота позже
+        test_start = max(slot_end, max(occupied) + timedelta(minutes=30) if occupied else slot_start)
+        while test_start.hour < 23:
+            test_end = test_start + timedelta(hours=2)
+            if all(
+                b + timedelta(hours=2) <= test_start or b >= test_end
+                for b in occupied
+            ):
+                return table_id, test_start
+            test_start += timedelta(minutes=30)
+
+    return None, None
+
 
 
 @router.message(F.text == "/start")
@@ -111,16 +163,44 @@ async def start_booking(msg: Message, state: FSMContext):
 async def choose_date(callback: CallbackQuery, state: FSMContext):
     date_str = callback.data.replace("date_", "")
     await state.update_data(date=date_str)
+    await state.set_state(Booking.guests)  # предположим, что дальше идёт выбор количества гостей
 
-    await state.set_state(Booking.guests)
+    # Получаем все брони на эту дату
+    existing = await get_all_bookings()
+    selected_date = datetime.strptime(date_str, "%d.%m.%Y").date()
 
-    # Кнопки 1–6 гостей
+    # Слоты, которые надо скрыть
+    unavailable_slots = set()
+
+    for record in existing:
+        user_id, table, time_str, name, booking_at_str = record
+        booking_at = datetime.fromisoformat(booking_at_str).replace(tzinfo=None)
+
+        if booking_at.date() != selected_date:
+            continue
+
+        start = booking_at
+        end = start + timedelta(hours=2)
+
+        for hour in range(start.hour, end.hour + 1):
+            for minute in [0, 30]:
+                ts = datetime.combine(start.date(), time(hour, minute))
+                if start <= ts < end:
+                    unavailable_slots.add(ts.strftime("%H:%M"))
+
+    # Создаём кнопки только для свободного времени
     builder = InlineKeyboardBuilder()
-    for i in range(1, 9):
-        builder.button(text=f"{i}", callback_data=f"guests_{i}")
-    builder.adjust(2)
+    for hour in range(9, 23):  # с 9:00 до 22:30
+        for minute in [0, 30]:
+            time_str = f"{hour:02d}:{minute:02d}"
+            if time_str in unavailable_slots:
+                continue
+            builder.button(text=time_str, callback_data=f"time_{time_str}")
 
-    await callback.message.answer("Сколько будет гостей?", reply_markup=builder.as_markup())
+    builder.adjust(3)
+
+    await callback.message.answer("Выбери время брони:", reply_markup=builder.as_markup())
+
 
 
 
@@ -136,29 +216,28 @@ async def choose_time(callback: CallbackQuery, state: FSMContext):
 
     time_str = callback.data.split("_")[1]
     hour, minute = map(int, time_str.split(":"))
-    await state.update_data(hour=hour, minute=minute)
-
+    
     guests = data['guests']
     date = data['date']
     selected_dt = datetime.strptime(date, "%d.%m.%Y").replace(hour=hour, minute=minute, tzinfo=timezone.utc)
 
     all_bookings = await get_all_bookings()
-    blocked = False
+    table_id, slot_time = await find_next_available_slot(guests, selected_dt, all_bookings)
 
-    for record in all_bookings:
-        _, _, _, _, booking_at_str = record
-        booking_at = datetime.fromisoformat(booking_at_str).replace(tzinfo=timezone.utc)
-
-        if guests == 8:
-            delta = timedelta(hours=2)
-            if booking_at.date() == selected_dt.date() and abs((booking_at - selected_dt).total_seconds()) < delta.total_seconds():
-                blocked = True
-                break
-
-    if blocked:
-        await callback.message.answer("На это время уже забронирован стол на 8 человек. Попробуйте другое.")
+    if not table_id:
+        await callback.message.answer("😞 На эту дату нет доступных столов нужной вместимости.")
         return
 
+    if slot_time != selected_dt:
+        time_suggested = slot_time.astimezone(timezone(timedelta(hours=3))).strftime("%H:%M")
+        await callback.message.answer(
+            f"⚠️ Кто-то только что забронировал этот стол на это время. Попробуйте выбрать другой.\n"
+            f"Ближайшее доступное время: {time_suggested}"
+        )
+        return
+
+    # Если время свободно, сохраняем данные и запрашиваем имя
+    await state.update_data(hour=hour, minute=minute, table_number=table_id)
     await state.set_state(Booking.name)
     await callback.message.answer("Как к вам можно обратиться?")
 
@@ -199,18 +278,18 @@ async def get_guests(callback: CallbackQuery, state: FSMContext):
     all_bookings = await get_all_bookings()
     blocked_slots = set()
 
-    for user_id, table, time, name, booking_at_str in all_bookings:
-        booking_at = datetime.fromisoformat(booking_at_str).replace(tzinfo=timezone.utc)
-        booking_at_local = booking_at.astimezone(timezone(timedelta(hours=3)))
+    if guests == 8:
+        for user_id, table, time, name, booking_at_str in all_bookings:
+            booking_at = datetime.fromisoformat(booking_at_str).replace(tzinfo=timezone.utc)
+            booking_at_local = booking_at.astimezone(timezone(timedelta(hours=3)))
 
-        if booking_at_local.date() != selected_date.date():
-            continue
+            if booking_at_local.date() != selected_date.date():
+                continue
 
-        if guests == 6:
-            # Если уже есть бронь на 6 человек, блокируем на ±2 часа
-            for shift_minutes in range(-119, 120, 30):  # проверим каждый полчаса в пределах 2 часов
-                blocked = (booking_at_local + timedelta(minutes=shift_minutes)).strftime("%H:%M")
-                blocked_slots.add(blocked)
+            if int(table) == 8:  # бронь на 8 гостей
+                for shift_minutes in range(-119, 120, 30):
+                    blocked = (booking_at_local + timedelta(minutes=shift_minutes)).strftime("%H:%M")
+                    blocked_slots.add(blocked)
 
     builder = InlineKeyboardBuilder()
     for hour in range(9, 24):
@@ -244,18 +323,14 @@ async def get_phone(msg: Message, state: FSMContext):
     data = await state.get_data()
     time_str = f"{data['hour']:02d}:{data['minute']:02d}"
 
-    try:
-        await save_booking(
-            user_id=msg.from_user.id,
-            table_number=str(data["guests"]),  # можно использовать как псевдостол
-            time=time_str,
-            name=data["name"],
-            date=data["date"]
-        )
-    except ValueError:
-        await msg.answer("⚠️ Кто-то только что забронировал этот стол на это время. Попробуйте выбрать другой.")
-        await state.clear()
-        return
+    # Удалена проверка доступности, так как она уже выполнена в choose_time
+    await save_booking(
+        user_id=msg.from_user.id,
+        table_number=str(data["guests"]),
+        time=time_str,
+        name=data["name"],
+        date=data["date"]
+    )
 
     await msg.answer(
         f"Спасибо {str(data['name']).capitalize()}! Ваше бронирование на {data['guests']} гостей, {data['date']}, в {time_str}.\n"
@@ -264,7 +339,6 @@ async def get_phone(msg: Message, state: FSMContext):
     )
 
     manager_chat_id = -4980377325
-
     text = (
         f"📢 Новая бронь!\n"
         f"📅 Дата: {data['date']}\n"
@@ -273,7 +347,6 @@ async def get_phone(msg: Message, state: FSMContext):
         f"👤 Имя: {str(data['name']).capitalize()}\n"
         f"📞 Телефон: {phone}"
     )
-
     await msg.bot.send_message(chat_id=manager_chat_id, text=text)
 
 
